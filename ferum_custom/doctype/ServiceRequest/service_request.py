@@ -1,7 +1,7 @@
 import json
 
 import frappe
-import requests
+import requests  # type: ignore[import-untyped]
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import add_days, add_hours, getdate, nowdate

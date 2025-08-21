@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from frappe_client import FrappeClient
@@ -14,8 +14,8 @@ frappe_client = FrappeClient(settings.ERP_API_URL, settings.ERP_API_KEY, setting
 
 @router.get("/reports")
 async def get_reports(current_user: Annotated[dict, Depends(get_current_user)]):
-    filters = {}
-    user_roles = current_user.get("roles", [])
+    filters: dict[str, Any] = {}
+    user_roles: list[str] = current_user.get("roles", [])
 
     if "Administrator" in user_roles or "Department Head" in user_roles:
         # Admins and Department Heads see all reports
