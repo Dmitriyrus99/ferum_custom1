@@ -2,14 +2,15 @@ import os
 import unittest
 from unittest.mock import MagicMock, patch
 
-import pytest
+try:
+	import frappe
+except ModuleNotFoundError:  # pragma: no cover - handled by unittest skip
+	frappe = None
 
-# Skip these tests entirely if the `frappe` package is not available. This
-# allows the test suite to run in environments where the ERPNext framework and
-# its dependencies are not installed.
-frappe = pytest.importorskip("frappe")
+skip_frappe = unittest.skipIf(frappe is None, "frappe not installed")
 
 
+@skip_frappe
 class TestMaintenanceSchedule(unittest.TestCase):
 	def setUp(self):
 		# Create dummy DocTypes for testing
@@ -156,6 +157,7 @@ class TestMaintenanceSchedule(unittest.TestCase):
 		mock_schedule.save.assert_called_once()  # Schedule should be updated
 
 
+@skip_frappe
 class TestServiceRequestSLA(unittest.TestCase):
 	def setUp(self):
 		if not frappe.db.exists("DocType", "ServiceRequest"):
@@ -225,6 +227,7 @@ class TestServiceRequestSLA(unittest.TestCase):
 		mock_sendmail.assert_called_once()  # Should attempt Email notification
 
 
+@skip_frappe
 class TestCustomAttachment(unittest.TestCase):
 	def setUp(self):
 		if not frappe.db.exists("DocType", "CustomAttachment"):
@@ -306,6 +309,7 @@ class TestCustomAttachment(unittest.TestCase):
 		mock_msgprint.assert_called_once()
 
 
+@skip_frappe
 class TestInvoiceStatusTransitions(unittest.TestCase):
 	def setUp(self):
 		if not frappe.db.exists("DocType", "Invoice"):
@@ -404,6 +408,7 @@ class TestInvoiceStatusTransitions(unittest.TestCase):
 		mock_frappe_throw.reset_mock()
 
 
+@skip_frappe
 class TestPayrollEntryCustom(unittest.TestCase):
 	def setUp(self):
 		if not frappe.db.exists("DocType", "PayrollEntryCustom"):
@@ -510,6 +515,7 @@ class TestPayrollEntryCustom(unittest.TestCase):
 		self.assertEqual(payroll_entry.total_payable, 850.0)
 
 
+@skip_frappe
 class TestInvoiceGoogleSheets(unittest.TestCase):
 	def setUp(self):
 		if not frappe.db.exists("DocType", "Invoice"):
