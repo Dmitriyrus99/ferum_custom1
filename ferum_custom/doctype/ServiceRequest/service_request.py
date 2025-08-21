@@ -15,6 +15,7 @@ class ServiceRequest(Document):
 
 	def on_update(self):
 		self.check_sla_breach()
+		self.update_timestamps()
 
 	def set_customer_and_project(self):
 		if self.is_new() or self.has_value_changed("service_object"):
@@ -81,43 +82,17 @@ class ServiceRequest(Document):
 				message=message,
 			)
 
+	def update_timestamps(self):
+		if self.status == "In Progress" and not self.actual_start_datetime:
+			self.actual_start_datetime = frappe.utils.now()
+		elif self.status == "Completed" and not self.actual_end_datetime:
+			self.actual_end_datetime = frappe.utils.now()
+		self.save()
+
 
 @frappe.whitelist()
-def send_sla_breach_notifications(service_request_name, message):
-	if not frappe.has_permission("ServiceRequest", "read", doc=service_request_name):
-		frappe.throw(_("Not permitted"), frappe.PermissionError)
-
-	settings = frappe.get_single("Ferum Settings")
-
-	# Send Telegram notification
-	if settings.enable_telegram_notifications and settings.telegram_chat_id and settings.fastapi_url:
-		try:
-			token = settings.get_password("fastapi_jwt_token")
-			headers = {"Authorization": f"Bearer {token}"}
-			payload = {"chat_id": settings.telegram_chat_id, "text": message}
-			response = requests.post(
-				f"{settings.fastapi_url}/api/v1/send_telegram_notification", headers=headers, json=payload
-			)
-			response.raise_for_status()
-			frappe.log_by_page(
-				f"SLA breach notification sent to Telegram for {service_request_name}", "SLA Notification"
-			)
-		except Exception as e:
-			frappe.log_error(
-				f"Failed to send SLA breach Telegram notification for {service_request_name}: {e}",
-				"SLA Notification Error",
-			)
-
-	# Send Email notification
-	if settings.enable_email_notifications and settings.sla_breach_recipient_email:
-		try:
-			subject = f"SLA Breach Alert: Service Request {service_request_name}"
-			frappe.sendmail(recipients=settings.sla_breach_recipient_email, subject=subject, message=message)
-			frappe.log_by_page(
-				f"SLA breach email notification sent for {service_request_name}", "SLA Notification"
-			)
-		except Exception as e:
-			frappe.log_error(
-				f"Failed to send SLA breach email notification for {service_request_name}: {e}",
-				"SLA Notification Error",
-			)
+def check_all_slas():
+	open_requests = frappe.get_all("ServiceRequest", filters={"status": ["not in", ["Completed", "Closed"]]})
+	for req in open_requests:
+		doc = frappe.get_doc("ServiceRequest", req.name)
+		doc.check_sla_breach()

@@ -22,9 +22,9 @@ async def send_telegram_notification_endpoint(
 	during test collection.
 	"""
 	try:
-		from ..bot.telegram_bot import send_telegram_notification
+		from ..bot.telegram_bot import send_telegram_message
 
-		await send_telegram_notification(payload.chat_id, payload.text)
+		await send_telegram_message(payload.chat_id, payload.text)
 		return {"message": "Notification sent successfully"}
 	except Exception as e:  # pragma: no cover - defensive programming
 		raise HTTPException(status_code=500, detail=f"Failed to send notification: {e}")

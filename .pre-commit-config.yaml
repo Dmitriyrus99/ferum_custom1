@@ -76,10 +76,11 @@ repos:
     hooks:
       - id: pytest
         name: pytest
-        entry: python -m pytest
-        language: system
+        entry: python run_pytest.py
+        language: python
         types: [python]
         pass_filenames: false
+        additional_dependencies: ["pytest", "fastapi", "uvicorn", "python-jose[cryptography]", "passlib[bcrypt]", "python-multipart", "frappe-client", "python-dotenv", "sentry-sdk", "httpx", "fastapi-limiter", "redis", "prometheus_client", "requests", "gspread", "google-api-python-client", "google-auth"]
 
 ci:
     autoupdate_schedule: weekly

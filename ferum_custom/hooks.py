@@ -147,7 +147,10 @@ doc_events = {
 	},
 	"Invoice": {
 		"after_insert": "ferum_custom.notifications.notify_new_invoice",
-		"on_update": "ferum_custom.notifications.notify_invoice_status_change",
+		"on_update": [
+			"ferum_custom.notifications.notify_invoice_status_change",
+			"ferum_custom.doctype.invoice.invoice.on_invoice_update",
+		],
 	},
 }
 
@@ -156,7 +159,8 @@ doc_events = {
 
 scheduler_events = {
 	"daily": [
-		"ferum_custom.doctype.MaintenanceSchedule.maintenance_schedule.generate_service_requests_from_schedule"
+		"ferum_custom.doctype.MaintenanceSchedule.maintenance_schedule.generate_service_requests_from_schedule",
+		"ferum_custom.doctype.ServiceRequest.service_request.check_all_slas",
 	],
 }
 

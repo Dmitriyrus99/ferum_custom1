@@ -106,25 +106,41 @@ async def create_request(
 		new_request = frappe_client.insert("ServiceRequest", request_data)
 		return {"message": "Service Request created successfully", "request": new_request}
 	except Exception as e:
-		raise HTTPException(status_code=500, detail=str(e))
+		raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.put("/requests/{request_name}/status")
 async def update_request_status(
 	request_name: str,
 	status_data: dict,
-	current_user: Annotated[
-		str, Depends(has_role(["Project Manager", "Administrator", "Engineer", "Department Head"]))
-	],
+	current_user: Annotated[dict, Depends(get_current_user)],
 ):
+	user_roles = current_user.get("roles", [])
+	user_name = current_user.get("name")
+
 	try:
+		request = frappe_client.get_doc("ServiceRequest", request_name)
+
+		if "Engineer" in user_roles and request.get("assigned_to") != user_name:
+			raise HTTPException(
+				status_code=status.HTTP_403_FORBIDDEN, detail="You are not assigned to this request."
+			)
+
+		if not any(role in user_roles for role in ["Project Manager", "Administrator", "Department Head"]):
+			if "Engineer" not in user_roles:
+				raise HTTPException(
+					status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to update status."
+				)
+
 		# This endpoint would enforce workflow rules defined in ERPNext
 		updated_request = frappe_client.set_value(
 			"ServiceRequest", request_name, {"status": status_data.get("status")}
 		)
 		return {"message": "Service Request status updated successfully", "request": updated_request}
+	except HTTPException as e:
+		raise e
 	except Exception as e:
-		raise HTTPException(status_code=500, detail=str(e))
+		raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.post("/requests/{request_name}/attachments")
@@ -164,4 +180,4 @@ async def upload_request_attachment(
 
 		return {"message": "Attachment uploaded and linked successfully", "attachment": new_attachment.name}
 	except Exception as e:
-		raise HTTPException(status_code=500, detail=str(e))
+		raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

@@ -8,6 +8,7 @@ class ServiceReport(Document):
 		self.calculate_total_amount()
 		self.validate_attachments()
 		self.validate_workflow_transitions()
+		self.validate_work_items()
 
 	def on_submit(self):
 		self.update_service_request_on_submit()
@@ -51,3 +52,7 @@ class ServiceReport(Document):
 				"ServiceRequest", self.service_request, {"linked_report": self.name, "status": "Completed"}
 			)
 			frappe.msgprint(_(f"Service Request {self.service_request} updated and marked as Completed."))
+
+	def validate_work_items(self):
+		if not self.work_items:
+			frappe.throw(_("At least one Work Item is required before submitting a Service Report."))

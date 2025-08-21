@@ -1,15 +1,17 @@
+import mimetypes
 import os
 
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils.background_jobs import enqueue
 
 # Conditional import for google-api-python-client and google-auth
 try:
 	from google.oauth2 import service_account
 	from googleapiclient.discovery import build
 
-	GOOGLE_DRIVE_INTEGRATION_ENABLED = True
+	GOOGLE_DRIVE_INTEGRATION_ENABLED = frappe.conf.get("google_drive_integration_enabled", False)
 except ImportError:
 	GOOGLE_DRIVE_INTEGRATION_ENABLED = False
 	frappe.log_error(
@@ -19,85 +21,95 @@ except ImportError:
 
 
 class CustomAttachment(Document):
-	def validate(self):
-		if self.file_url and not self.google_drive_file_id and GOOGLE_DRIVE_INTEGRATION_ENABLED:
-			# If a file is attached (file_url is set) and not yet uploaded to Drive
-			self.upload_to_google_drive()
+	def before_insert(self):
+		if self.file_url and GOOGLE_DRIVE_INTEGRATION_ENABLED:
+			enqueue(upload_to_google_drive, queue="long", doc_name=self.name)
 
 	def on_trash(self):
 		if self.google_drive_file_id and GOOGLE_DRIVE_INTEGRATION_ENABLED:
-			self.delete_from_google_drive()
+			enqueue(delete_from_google_drive, queue="long", doc_name=self.name)
 
-	def get_drive_service(self):
-		if not GOOGLE_DRIVE_INTEGRATION_ENABLED:
-			frappe.throw(_("Google Drive integration is not enabled. Missing required libraries."))
 
-		try:
-			# Assuming the path to the service account key file is stored in site_config.json
-			# or a custom DocType setting, e.g., frappe.conf.google_drive_service_account_key_path
-			# For development, you might place it in the app folder or a secure location.
-			key_file_path = frappe.get_site_path("private", "keys", "google_drive_service_account.json")
-			if not os.path.exists(key_file_path):
-				frappe.throw(_("Google Drive service account key file not found at: ") + key_file_path)
+@frappe.whitelist()
+def upload_to_google_drive(doc_name):
+	doc = frappe.get_doc("CustomAttachment", doc_name)
+	if not doc.file_url:
+		return
 
-			credentials = service_account.Credentials.from_service_account_file(
-				key_file_path, scopes=["https://www.googleapis.com/auth/drive"]
-			)
-			return build("drive", "v3", credentials=credentials)
-		except Exception as e:
-			frappe.log_error(f"Failed to get Google Drive service: {e}", "Google Drive Integration Error")
-			frappe.throw(_(f"Failed to initialize Google Drive service: {e}"))
+	service = get_drive_service()
+	if not service:
+		return
 
-	def upload_to_google_drive(self):
-		if not self.file_url:
-			return
+	file_path = frappe.get_site_path("public", doc.file_url.lstrip("/"))
+	if "/private/files/" in doc.file_url:
+		file_path = frappe.get_site_path("private", doc.file_url.split("/private/files/")[1])
 
-		service = self.get_drive_service()
-		file_path = frappe.get_site_path("public", self.file_url.lstrip("/"))  # Assuming public files for now
+	if not os.path.exists(file_path):
+		frappe.log_error(f"File not found on server: {file_path}", "Google Drive Upload Error")
+		return
 
-		# If the file is private, adjust the path accordingly
-		if "/private/files/" in self.file_url:
-			file_path = frappe.get_site_path("private", self.file_url.split("/private/files/")[1])
+	file_metadata = {
+		"name": doc.file_name or os.path.basename(file_path),
+		"parents": [frappe.conf.get("google_drive_folder_id")],
+	}
 
-		if not os.path.exists(file_path):
-			frappe.throw(_("File not found on server: ") + file_path)
+	mime_type, _ = mimetypes.guess_type(file_path)
+	media = {
+		"body": open(file_path, "rb"),
+		"mimeType": mime_type or "application/octet-stream",
+	}
 
-		file_metadata = {
-			"name": self.file_name or os.path.basename(file_path),
-			"parents": [frappe.conf.google_drive_folder_id],  # Parent folder ID from site_config
-		}
-		media = {
-			"body": open(file_path, "rb"),
-			"mimeType": self.file_url.split(".")[-1],  # Simple mime type guess
-		}
+	try:
+		file = (
+			service.files().create(body=file_metadata, media_body=media, fields="id, webViewLink").execute()
+		)
+		doc.google_drive_file_id = file.get("id")
+		doc.file_url = file.get("webViewLink")
+		doc.save()
+		frappe.msgprint(_(f"File {doc.file_name} uploaded to Google Drive."))
+	except Exception as e:
+		frappe.log_error(
+			f"Failed to upload file {doc.file_name} to Google Drive: {e}",
+			"Google Drive Integration Error",
+		)
 
-		try:
-			file = (
-				service.files()
-				.create(body=file_metadata, media_body=media, fields="id, webViewLink")
-				.execute()
-			)
-			self.google_drive_file_id = file.get("id")
-			self.file_url = file.get("webViewLink")  # Update file_url to Google Drive link
-			frappe.msgprint(_(f"File {self.file_name} uploaded to Google Drive."))
-		except Exception as e:
+
+@frappe.whitelist()
+def delete_from_google_drive(doc_name):
+	doc = frappe.get_doc("CustomAttachment", doc_name)
+	if not doc.google_drive_file_id:
+		return
+
+	service = get_drive_service()
+	if not service:
+		return
+
+	try:
+		service.files().delete(fileId=doc.google_drive_file_id).execute()
+		frappe.msgprint(_(f"File {doc.file_name} deleted from Google Drive."))
+	except Exception as e:
+		frappe.log_error(
+			f"Failed to delete file {doc.file_name} from Google Drive: {e}",
+			"Google Drive Integration Error",
+		)
+
+
+def get_drive_service():
+	if not GOOGLE_DRIVE_INTEGRATION_ENABLED:
+		return None
+
+	try:
+		key_file_path = frappe.conf.get("google_drive_service_account_key_path")
+		if not key_file_path or not os.path.exists(key_file_path):
 			frappe.log_error(
-				f"Failed to upload file {self.file_name} to Google Drive: {e}",
-				"Google Drive Integration Error",
+				"Google Drive service account key file not found.", "Google Drive Integration Error"
 			)
-			frappe.throw(_(f"Failed to upload file to Google Drive: {e}"))
+			return None
 
-	def delete_from_google_drive(self):
-		if not self.google_drive_file_id:
-			return
-
-		service = self.get_drive_service()
-		try:
-			service.files().delete(fileId=self.google_drive_file_id).execute()
-			frappe.msgprint(_(f"File {self.file_name} deleted from Google Drive."))
-		except Exception as e:
-			frappe.log_error(
-				f"Failed to delete file {self.file_name} from Google Drive: {e}",
-				"Google Drive Integration Error",
-			)
-			frappe.throw(_(f"Failed to delete file from Google Drive: {e}"))
+		credentials = service_account.Credentials.from_service_account_file(
+			key_file_path, scopes=["https://www.googleapis.com/auth/drive"]
+		)
+		return build("drive", "v3", credentials=credentials)
+	except Exception as e:
+		frappe.log_error(f"Failed to get Google Drive service: {e}", "Google Drive Integration Error")
+		return None

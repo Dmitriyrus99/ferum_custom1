@@ -83,6 +83,17 @@ services:
       bench start
       "
 
-volumes:
-  mariadb-data:
-  bench-vol:
+  telegram-bot:
+    image: ferum_customs:version-15
+    platform: linux/amd64
+    env_file: .env
+    volumes:
+      - ./ferum_custom:/home/frappe/frappe-bench/apps/ferum_custom
+      - ./backend:/home/frappe/frappe-bench/apps/backend
+    working_dir: /home/frappe/frappe-bench
+    depends_on:
+      - frappe
+    command: >
+      bash -lc "
+      bench exec python /home/frappe/frappe-bench/apps/backend/bot/main.py
+      "
