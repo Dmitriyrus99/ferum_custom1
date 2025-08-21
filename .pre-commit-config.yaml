@@ -70,12 +70,13 @@ repos:
         args: [--ignore-missing-imports, --show-error-codes]
         additional_dependencies:
           - types-redis
+          - types-requests
 
   - repo: local
     hooks:
       - id: pytest
         name: pytest
-        entry: pytest
+        entry: python -m pytest
         language: system
         types: [python]
         pass_filenames: false
