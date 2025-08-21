@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from frappe_client import FrappeClient
@@ -14,9 +14,9 @@ frappe_client = FrappeClient(settings.ERP_API_URL, settings.ERP_API_KEY, setting
 
 @router.get("/requests")
 async def get_requests(current_user: Annotated[dict, Depends(get_current_user)]):
-    filters = {}
-    user_roles = current_user.get("roles", [])
-    user_name = current_user.get("name")
+    filters: dict[str, Any] = {}
+    user_roles: list[str] = current_user.get("roles", [])
+    user_name: str | None = current_user.get("name")
 
     if "Administrator" in user_roles or "Office Manager" in user_roles:
         # Admins and Office Managers see all requests
@@ -30,7 +30,10 @@ async def get_requests(current_user: Annotated[dict, Depends(get_current_user)])
             return {"requests": []}
     elif "Engineer" in user_roles:
         # Engineers see requests assigned to them
-        filters["assigned_to"] = user_name
+        if user_name:
+            filters["assigned_to"] = user_name
+        else:
+            return {"requests": []}
     elif "Client" in user_roles:
         # Clients see requests associated with their customer
         customer_id = current_user.get("customer_id")
