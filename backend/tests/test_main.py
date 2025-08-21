@@ -115,7 +115,12 @@ def mock_frappe_client(
 	if get_list_return is not None:
 		mock.get_list.return_value = get_list_return
 	if get_doc_return is not None:
-		mock.get_doc.return_value = get_doc_return
+		if isinstance(get_doc_return, Exception):
+			mock.get_doc.side_effect = get_doc_return
+		elif isinstance(get_doc_return, MagicMock) and get_doc_return.side_effect:
+			mock.get_doc.side_effect = get_doc_return.side_effect
+		else:
+			mock.get_doc.return_value = get_doc_return
 	if get_value_return is not None:
 		mock.get_value.return_value = get_value_return
 	if insert_return is not None:
